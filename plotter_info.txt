@@ -1,0 +1,16 @@
+
+
+Milestones:
+
+	Complete - Labels for plot options
+	Complete - Vertical sizing larger on launch
+	Complete - Combine into less files
+	Complete - Remove args and import csv after launch. 
+	Complete - Make it so importing a new file will reload widget
+	Partial - Multiple files
+	2d plotting (seperate module for this)
+	Cursor for table will find indicies and clicking table will go mark on plot
+
+v08 Can now import multiple csv files but the replot function does not work yet.
+v07 Combined into one file. Importing a new files will reload widget (but not change axis limits).
+v06 Replaces arg file input with file dialog.
