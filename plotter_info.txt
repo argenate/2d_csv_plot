@@ -1,18 +1,24 @@
-Current version: v10
+Fork: master (QTableview)
+Current version: v13
 
 Milestones:
-
 	Complete - Labels for plot options
 	Complete - Vertical sizing larger on launch
 	Complete - Combine into less files
 	Complete - Remove args and import csv after launch. 
 	Complete - Make it so importing a new file will reload widget
 	Complete - Multiple files
-	2d plotting (seperate module for this)
-	Cursor for table will find indicies and clicking table will go mark on plot
+	Complete - 2d plotting (seperate module for this)
+	Complete - Change table to view 10000 (100x100) cells in the table
+	Additional row and column for wavelength/time
+	Cursor for table will find indicies and clicking table will create mark on plot
+	Fork for seaborn data science plots and pulling data off internet
 
-v10 2d plotting partially complete (very slow for large files)
-v09 Replot function works and fixed table headers
+v13 Change table to view only 10000 (100x100) cells in the table (qtableview fork). Also corrected for change in row and column indexes.
+v12 Minor changes (qgraphics fork)
+v11 Fork - 1d plotting from v09. Changed table code to use QGraphicview.
+v10 2d plotting partially complete (very slow for large files).
+v09 Replot function works and fixed table headers.
 v08 Can now import multiple csv files but the replot function does not work yet.
 v07 Combined into one file. Importing a new files will reload widget (but not change axis limits).
 v06 Replaces arg file input with file dialog.
