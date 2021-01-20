@@ -1,78 +1,31 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 import pandas as pd
 import numpy as np
 
+import PySide2
 from PySide2 import QtCore, QtWidgets, QtGui
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator
+
+# These next three lines are for fixing issues with Qt not finding .dll files
+dirname = os.path.dirname(PySide2.__file__)
+plugin_path = os.path.join(dirname, 'plugins', 'platforms')
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
 
 
 def read_data(fname):
     """The function that reads the file given in the -f arg.
     It removes all rows with strings and returns two 1d numpy arrays
     """
-    df = pd.read_csv(fname, sep=',', usecols=(0, 1), header=None)  # error_bad_lines=False, warn_bad_lines=False)
-    df = df.dropna(how='any')
-    df = df[pd.to_numeric(df[0], errors='coerce').notnull()]
-    data_arr = df.to_numpy(dtype='float64')
+    data_arr = np.genfromtxt(fname, dtype='float64')
 
     return data_arr
-
-
-class CustomTableModel(QtCore.QAbstractTableModel):
-    """Class for creating the table model where the raw data from the csv is shown."""
-    def __init__(self, data=None, data_len=None, columns=None):
-        QtCore.QAbstractTableModel.__init__(self)
-        self.column_count = data_len * 2
-        self.tabledata = data
-        self.load_data()
-        self.columns = columns
-
-    def load_data(self):
-        length = []
-        for i in range(int(self.column_count / 2)):
-            length.append(np.shape(self.tabledata[i][:, 0])[0])
-        self.row_count = max(length)
-
-    def rowCount(self, parent=QtCore.QModelIndex()):
-        return self.row_count
-
-    def columnCount(self, parent=QtCore.QModelIndex()):
-        return self.column_count
-
-    def headerData(self, section, orientation, role):
-        if role != QtCore.Qt.DisplayRole:
-            return None
-        if orientation == QtCore.Qt.Horizontal:
-            return self.columns[section]
-        else:
-            return "{}".format(section)
-
-    def data(self, index, role=QtCore.Qt.DisplayRole):
-        column = index.column()
-        row = index.row()
-
-        if role == QtCore.Qt.DisplayRole:
-            if column % 2 == 0:
-                try:
-                    return str(self.tabledata[(column / 2)][row, 0])
-                except IndexError:
-                    return str('empty')
-            else:
-                try:
-                    return str(self.tabledata[int((column / 2) - 0.5)][row, 1])
-                except IndexError:
-                    return str('empty')
-        elif role == QtCore.Qt.BackgroundRole:
-            return QtGui.QColor(QtCore.Qt.white)
-        elif role == QtCore.Qt.TextAlignmentRole:
-            return QtCore.Qt.AlignRight
-
-        return None
 
 
 class Widget(QtWidgets.QWidget):
@@ -88,17 +41,7 @@ class Widget(QtWidgets.QWidget):
             self.open_csv()
 
         # Creating a QTableView
-        self.model = CustomTableModel(self.data, self.num_files, self.columns)
-        self.table_view = QtWidgets.QTableView()
-        self.table_view.setModel(self.model)
-
-        # QTableView Headers
-        resize = QtWidgets.QHeaderView.ResizeToContents
-        self.horizontal_header = self.table_view.horizontalHeader()
-        self.vertical_header = self.table_view.verticalHeader()
-        self.horizontal_header.setSectionResizeMode(resize)
-        self.vertical_header.setSectionResizeMode(resize)
-        self.horizontal_header.setStretchLastSection(False)
+        self.createGraphicView()
 
         # Creating layout for plot options
         self.options = QtWidgets.QVBoxLayout()
@@ -165,15 +108,14 @@ class Widget(QtWidgets.QWidget):
         self.options.addWidget(self.file_button)
         self.file_button.clicked.connect(self.new_csv)
 
-        self.plot()
+        self.plot(self.data)
 
         # Left and main layout
         size = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Preferred)
         size.setHorizontalStretch(4)
-        self.table_view.setSizePolicy(size)
 
         self.main_layout = QtWidgets.QHBoxLayout()
-        self.main_layout.addWidget(self.table_view)
+        self.main_layout.addWidget(self.graphicsView)
 
         # Middle Layout
         size.setHorizontalStretch(4)
@@ -186,15 +128,46 @@ class Widget(QtWidgets.QWidget):
         # Set the layout to the QWidget
         self.setLayout(self.main_layout)
 
-    def plot(self):
+    def createGraphicView(self):
+        """"Method that creates the widget displaying the csvs values in a table.
+        Adds (and displays) zeros at the end of the arrays that are smaller.
+        """
+        self.scene = QtWidgets.QGraphicsScene()
+        padding = 3
+        column_width = 60 + padding * 2
+        row_height = 12 + padding * 2
+        self.column_count = self.shape[1]
+        self.row_count = self.shape[0]
+
+        for x in range(self.column_count):
+            for y in range(self.row_count):
+                text = "{:.4f}".format(self.data[x, y])
+                item = QtWidgets.QGraphicsSimpleTextItem()
+                item.setText(text)
+                item.setPos(x * column_width + padding, y * row_height + padding)
+                item.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
+                self.scene.addItem(item)
+
+        for x in range(self.column_count + 1):
+            line_x = x * column_width
+            self.scene.addLine(line_x, 0, line_x, self.row_count * row_height,
+                               pen=QtGui.QPen(QtGui.QColor('grey')))
+
+        for y in range(self.row_count + 1):
+            line_y = y * row_height
+            self.scene.addLine(0, line_y, self.column_count * column_width, line_y,
+                               pen=QtGui.QPen(QtGui.QColor('grey')))
+
+        self.graphicsView = QtWidgets.QGraphicsView(self.scene, self)
+        self.graphicsView.setGeometry(0, 0, 600, 500)
+
+    def plot(self, data):
         """Creating matplotlib layout"""
+        levels = MaxNLocator(nbins=15).tick_values(data[1:, 1:].min(), data[1:, 1:].max())
         self.fig = Figure(figsize=(7, 7), dpi=100, facecolor=(1, 1, 1), edgecolor=(0, 0, 0))
         self.canvas = FigureCanvas(self.fig)
         self.ax = self.fig.add_subplot(111)
-        for i in range(self.num_files):
-            data = self.data[i]
-            data[:, 1] /= data[:, 1].max()
-            self.ax.plot(data[:, 0], data[:, 1])
+        self.ax.contourf(data[1:, 0], data[0, 1:], data[1:, 1:], levels=levels, cmap='inferno')
         self.toolbar = NavigationToolbar(self.canvas, self)
         self.plot_layout = QtWidgets.QVBoxLayout()
         self.plot_layout.addWidget(self.toolbar)
@@ -211,7 +184,7 @@ class Widget(QtWidgets.QWidget):
         multiply_y_values = self.multiply_y_values.text()
         y_shift = float(shift_y_values)
         y_factor = float(multiply_y_values)
-        for i in range(self.num_files):
+        for i in range(1):  # number of files
             data = self.data[i]
             data[:, 1] /= data[:, 1].max()
             self.plot.set_data(data[:, 0], y_factor * (data[:, 1] + y_shift))
@@ -222,33 +195,25 @@ class Widget(QtWidgets.QWidget):
 
     def open_csv(self):
         """Method opening first csv and saving data and headers"""
-        filename, *_ = QtWidgets.QFileDialog.getOpenFileNames(self, self.tr('Open CSV'), self.tr("~/Desktop/"),
-                                                              self.tr('Files (*.csv)'))
-        self.num_files = len(filename)
-        self.data = {}
-        self.columns = []
-        for i in range(self.num_files):
-            filedata = read_data(filename[i])
-            self.data[i] = filedata
-            self.columns.append("Wavelength (nm)")
-            self.columns.append("Intensity")
+        filename, *_ = QtWidgets.QFileDialog.getOpenFileName(self, self.tr('Open txt'), self.tr("~/Desktop/"),
+                                                             self.tr('Files (*.txt)'))
+        self.data = read_data(filename)
+        self.shape = np.shape(self.data)
+
         return None
 
     def new_csv(self):
         """Method opening new csv and saving data"""
-        filename, *_ = QtWidgets.QFileDialog.getOpenFileNames(self, self.tr('Open CSV'), self.tr("~/Desktop/"),
-                                                              self.tr('Files (*.csv)'))
-        self.num_files = len(filename)
-        self.data = {}
-        for i in range(self.num_files):
-            filedata = read_data(filename[i])
-            self.data[i] = filedata
+        filename, *_ = QtWidgets.QFileDialog.getOpenFileName(self, self.tr('Open txt'), self.tr("~/Desktop/"),
+                                                             self.tr('Files (*.txt)'))
+        self.data = read_data(filename)
+        self.shape = np.shape(self.data)
 
-        self.model = CustomTableModel(self.data, self.num_files)
-        self.table_view.setModel(self.model)
+        # Change the next two lines to the qgraphics
+        # self.model = CustomTableModel(self.data, self.shape)
+        # self.table_view.setModel(self.model)
 
-        for i in range(self.num_files):
-            self.plot.set_data(self.data[i][:, 0], self.data[i][:, 1])
+        self.plot.set_data(self.data[0, :], self.data[:, 0], self.data[1:, 1:])
         self.ax.relim()
         self.ax.autoscale_view(True, True, True)
         self.canvas.draw()
