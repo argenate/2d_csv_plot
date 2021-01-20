@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
 
-import os
 import sys
 import pandas as pd
 import numpy as np
 
-import PySide2
 from PySide2 import QtCore, QtWidgets, QtGui
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
-
-# These next three lines are for fixing issues with Qt not finding .dll files
-dirname = os.path.dirname(PySide2.__file__)
-plugin_path = os.path.join(dirname, 'plugins', 'platforms')
-os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
 
 
 def read_data(fname):
@@ -28,6 +21,53 @@ def read_data(fname):
     return data_arr
 
 
+class CustomTableModel(QtCore.QAbstractTableModel):
+    """Class for creating the table model where the raw data from the csv is shown. 
+    Maximum 100x100 array used. The user can choose the center index for the slice."""
+    def __init__(self, data=None, tableindex=None):
+        QtCore.QAbstractTableModel.__init__(self)
+
+        self.tabledata = data
+        self.tableindex = tableindex
+        if self.tabledata.shape[0] < 101:
+            pass
+        else:
+            self.lower_row = self.tableindex[1] - 50
+            self.upper_row = self.tableindex[1] + 50
+            self.lower_col = self.tableindex[0] - 50
+            self.upper_col = self.tableindex[0] + 50
+            self.tabledata = self.tabledata[self.lower_row:self.upper_row, self.lower_col:self.upper_col]
+        self.row_count, self.column_count = np.shape(self.tabledata)
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        return self.row_count
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return self.column_count
+
+    def headerData(self, section, orientation, role):
+        if role != QtCore.Qt.DisplayRole:
+            return None
+        if orientation == QtCore.Qt.Horizontal:
+            col_list = list(range(self.lower_col, self.upper_col))
+            return col_list[section]
+        if orientation == QtCore.Qt.Vertical:
+            row_list = list(range(self.lower_row, self.upper_row))
+            return row_list[section]
+        else:
+            return "{}".format(section)
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if role == QtCore.Qt.DisplayRole:
+            return str("{:.2f}".format(self.tabledata[index.row(), index.column()]))
+        elif role == QtCore.Qt.BackgroundRole:
+            return QtGui.QColor(QtCore.Qt.white)
+        elif role == QtCore.Qt.TextAlignmentRole:
+            return QtCore.Qt.AlignRight
+
+        return None
+
+
 class Widget(QtWidgets.QWidget):
     """Class for laying out the table, plot and plot options widgets."""
     def __init__(self):
@@ -36,12 +76,26 @@ class Widget(QtWidgets.QWidget):
         """
         QtWidgets.QWidget.__init__(self)
         try:
+            self.tableindex
+        except AttributeError:
+            self.tableindex = [51, 51]
+        try:
             self.data
         except AttributeError:
             self.open_csv()
 
         # Creating a QTableView
-        self.createGraphicView()
+        self.model = CustomTableModel(self.data, self.tableindex)
+        self.table_view = QtWidgets.QTableView()
+        self.table_view.setModel(self.model)
+
+        # QTableView Headers
+        resize = QtWidgets.QHeaderView.ResizeToContents
+        self.horizontal_header = self.table_view.horizontalHeader()
+        self.vertical_header = self.table_view.verticalHeader()
+        self.horizontal_header.setSectionResizeMode(resize)
+        self.vertical_header.setSectionResizeMode(resize)
+        self.horizontal_header.setStretchLastSection(False)
 
         # Creating layout for plot options
         self.options = QtWidgets.QVBoxLayout()
@@ -103,6 +157,28 @@ class Widget(QtWidgets.QWidget):
         self.button = QtWidgets.QPushButton('Replot', self)
         self.options.addWidget(self.button)
         self.button.clicked.connect(self.replot)
+        self.options.addSpacing(10)
+
+        self.label6 = QtWidgets.QLabel('Center column: ')
+        self.label6.setAlignment(QtCore.Qt.AlignBottom)
+        self.label6.setSizePolicy(labelsize)
+        self.options.addWidget(self.label6)
+        self.centercol = QtWidgets.QLineEdit('Center column')
+        self.options.addWidget(self.centercol)
+        self.options.addSpacing(5)
+
+        self.label7 = QtWidgets.QLabel('Center row: ')
+        self.label7.setAlignment(QtCore.Qt.AlignBottom)
+        self.label7.setSizePolicy(labelsize)
+        self.options.addWidget(self.label7)
+        self.centerrow = QtWidgets.QLineEdit('Center row')
+        self.options.addWidget(self.centerrow)
+        self.options.addSpacing(5)
+
+        self.button = QtWidgets.QPushButton('Recenter table', self)
+        self.options.addWidget(self.button)
+        self.button.clicked.connect(self.table_recenter)
+        self.options.addSpacing(10)
 
         self.file_button = QtWidgets.QPushButton('CSV Import', self)
         self.options.addWidget(self.file_button)
@@ -113,9 +189,10 @@ class Widget(QtWidgets.QWidget):
         # Left and main layout
         size = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Preferred)
         size.setHorizontalStretch(4)
+        self.table_view.setSizePolicy(size)
 
         self.main_layout = QtWidgets.QHBoxLayout()
-        self.main_layout.addWidget(self.graphicsView)
+        self.main_layout.addWidget(self.table_view)
 
         # Middle Layout
         size.setHorizontalStretch(4)
@@ -127,39 +204,6 @@ class Widget(QtWidgets.QWidget):
 
         # Set the layout to the QWidget
         self.setLayout(self.main_layout)
-
-    def createGraphicView(self):
-        """"Method that creates the widget displaying the csvs values in a table.
-        Adds (and displays) zeros at the end of the arrays that are smaller.
-        """
-        self.scene = QtWidgets.QGraphicsScene()
-        padding = 3
-        column_width = 60 + padding * 2
-        row_height = 12 + padding * 2
-        self.column_count = self.shape[1]
-        self.row_count = self.shape[0]
-
-        for x in range(self.column_count):
-            for y in range(self.row_count):
-                text = "{:.4f}".format(self.data[x, y])
-                item = QtWidgets.QGraphicsSimpleTextItem()
-                item.setText(text)
-                item.setPos(x * column_width + padding, y * row_height + padding)
-                item.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
-                self.scene.addItem(item)
-
-        for x in range(self.column_count + 1):
-            line_x = x * column_width
-            self.scene.addLine(line_x, 0, line_x, self.row_count * row_height,
-                               pen=QtGui.QPen(QtGui.QColor('grey')))
-
-        for y in range(self.row_count + 1):
-            line_y = y * row_height
-            self.scene.addLine(0, line_y, self.column_count * column_width, line_y,
-                               pen=QtGui.QPen(QtGui.QColor('grey')))
-
-        self.graphicsView = QtWidgets.QGraphicsView(self.scene, self)
-        self.graphicsView.setGeometry(0, 0, 600, 500)
 
     def plot(self, data):
         """Creating matplotlib layout"""
@@ -184,7 +228,7 @@ class Widget(QtWidgets.QWidget):
         multiply_y_values = self.multiply_y_values.text()
         y_shift = float(shift_y_values)
         y_factor = float(multiply_y_values)
-        for i in range(1):  # number of files
+        for i in range(self.num_files):
             data = self.data[i]
             data[:, 1] /= data[:, 1].max()
             self.plot.set_data(data[:, 0], y_factor * (data[:, 1] + y_shift))
@@ -192,6 +236,16 @@ class Widget(QtWidgets.QWidget):
         self.ax.set_ylabel(y_axis_label, fontsize=axis_label_fontsize)
         self.ax.tick_params(axis='both', which='major', labelsize=tickmarks_fontsize)
         self.canvas.draw()
+
+    def table_recenter(self):
+        """Method that centers the table on a new index"""
+        col = self.centercol.text()
+        row = self.centerrow.text()
+        self.tableindex = [int(col), int(row)]
+        self.model = CustomTableModel(self.data, self.tableindex)
+        self.table_view.setModel(self.model)
+
+        return None
 
     def open_csv(self):
         """Method opening first csv and saving data and headers"""
@@ -209,9 +263,8 @@ class Widget(QtWidgets.QWidget):
         self.data = read_data(filename)
         self.shape = np.shape(self.data)
 
-        # Change the next two lines to the qgraphics
-        # self.model = CustomTableModel(self.data, self.shape)
-        # self.table_view.setModel(self.model)
+        self.model = CustomTableModel(self.data, None)
+        self.table_view.setModel(self.model)
 
         self.plot.set_data(self.data[0, :], self.data[:, 0], self.data[1:, 1:])
         self.ax.relim()
