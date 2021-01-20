@@ -1,4 +1,4 @@
-
+Current version: v10
 
 Milestones:
 
@@ -7,10 +7,12 @@ Milestones:
 	Complete - Combine into less files
 	Complete - Remove args and import csv after launch. 
 	Complete - Make it so importing a new file will reload widget
-	Partial - Multiple files
+	Complete - Multiple files
 	2d plotting (seperate module for this)
 	Cursor for table will find indicies and clicking table will go mark on plot
 
+v10 2d plotting partially complete (very slow for large files)
+v09 Replot function works and fixed table headers
 v08 Can now import multiple csv files but the replot function does not work yet.
 v07 Combined into one file. Importing a new files will reload widget (but not change axis limits).
 v06 Replaces arg file input with file dialog.
